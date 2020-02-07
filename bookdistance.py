@@ -168,7 +168,8 @@ def runLSHComparison(booknum_to_word_to_prob, word_set, numReps, stringLength, v
                 currentClassNames.append(bookTitles[booknum])
 #             equivalencyClassesWithNames.append(currentClassNames)
             print("Equivalency Class {}: {}".format(equivalencyClassNum, str(currentClassNames)))
-#     else:
+            equivalencyClassNum += 1
+    else:
         for booknum in range(numBooks):
             likeBooks = set()
     #         print(booknum_to_similarBooks[booknum])
@@ -179,6 +180,7 @@ def runLSHComparison(booknum_to_word_to_prob, word_set, numReps, stringLength, v
             
 def mergeSetsWithCommonElements(listOfSets):
     changeMade = True
+    listOfSets = list(listOfSets)
     while changeMade:
         changeMade = False
         setsToAdd = []
@@ -191,7 +193,7 @@ def mergeSetsWithCommonElements(listOfSets):
                     setIndicesToRemove += [i]
                     setIndicesToRemove += [j]
                     changeMade = True
-                    print("marked {} and {} as indices to be removed".format(i,j))
+#                     print("marked {} and {} as indices to be removed".format(i,j))
         setIndicesToRemove = sorted(list(set(setIndicesToRemove)))
         for i in reversed(range(len(setIndicesToRemove))):
             listOfSets.pop(setIndicesToRemove[i])
