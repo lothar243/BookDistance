@@ -43,7 +43,7 @@ def getWordCountFromBook(filename):
                 word_to_count[word] += 1
     return word_to_count, metadata
     
-def getDistributions(bookFilenames, epsilon):
+def getDistributions(bookFilenames, epsilon, takeLog):
     booknum_to_word_to_prob = [None]*len(bookFilenames)
     booknum_to_metadata = [None]*len(bookFilenames)
     word_set = set()
@@ -55,6 +55,8 @@ def getDistributions(bookFilenames, epsilon):
 #         booknum_to_word_to_prob[booknum] = normalizeDictionary(booknum_to_word_to_prob[booknum])
         for word in word_set:
             booknum_to_word_to_prob[booknum][word] += epsilon
+            if(takeLog):
+                booknum_to_word_to_prob[booknum][word] = math.log(booknum_to_word_to_prob[booknum][word])
         booknum_to_word_to_prob[booknum] = normalizeDictionary(booknum_to_word_to_prob[booknum])
     return booknum_to_word_to_prob, booknum_to_metadata, word_set
             
@@ -119,12 +121,15 @@ def runFullComparison(booknum_to_word_to_prob, word_set, bookTitles):
 #     print("sending to csv printer: " + str(distances))
     printAsCSV(bookTitles, bookTitles, distances)
 
-def runLSHComparison(booknum_to_word_to_prob, word_set, numReps, stringLength, verbose, bookTitles, transitiveClustering):
+def runLSHComparison(booknum_to_word_to_prob, word_set, numReps, stringLength, verbose, bookTitles, transitiveClustering, numClasses):
     numBooks = len(booknum_to_word_to_prob)
     booknum_to_similarBooks = [set() for x in range(numBooks)]
 
-    equivalencyClasses = defaultdict(int)
-    for rep in range(numReps):
+    equivalencyClasses = [None] * numBooks
+
+    rep = 0
+    while rep < numReps and (len(equivalencyClasses) > numClasses):
+        rep += 1
         booknum_strings = [""] * numBooks
 
         for stringIndex in range(stringLength):
@@ -152,7 +157,6 @@ def runLSHComparison(booknum_to_word_to_prob, word_set, numReps, stringLength, v
                         if booknum < newBook:
                             print("{} is similar to {}".format(bookTitles[booknum],bookTitles[newBook]))
                 booknum_to_similarBooks[booknum].update(bookset)
-    if transitiveClustering:
         #convert like books into equivalency classes
         equivalencyClasses = mergeSetsWithCommonElements(booknum_to_similarBooks)
                 
@@ -162,7 +166,7 @@ def runLSHComparison(booknum_to_word_to_prob, word_set, numReps, stringLength, v
     if(transitiveClustering):
         equivalencyClassesWithNames = []
         equivalencyClassNum = 1
-        for equivalencyClass in equivalencyClasses:
+        for equivalencyClass in sorted(list(equivalencyClasses)):
             currentClassNames = []
             for booknum in equivalencyClass:
                 currentClassNames.append(bookTitles[booknum])
@@ -200,7 +204,14 @@ def mergeSetsWithCommonElements(listOfSets):
         for setToAdd in setsToAdd:
             listOfSets += [setToAdd]
     return listOfSets
-        
+
+def shiftOriginToMedian(booknum_to_word_to_prob, word_set, numBooks):
+    for word in word_set:
+        probs = [booknum_to_word_to_prob[booknum][word] for booknum in range(numBooks)]
+        dimensionMedian = median(probs)
+        for booknum in range(numBooks):
+            booknum_to_word_to_prob[booknum][word] -= dimensionMedian
+    return booknum_to_word_to_prob
         
     
 def printAsCSV(colTitles, rowTitles, array):
@@ -216,6 +227,11 @@ def printAsCSV(colTitles, rowTitles, array):
     for i in range(len(rowTitles)):
         print( "\"" + rowTitles[i] + "\"," + ",".join(stringArray[i]))
 
+def median(lst):
+    n = len(lst)
+    s = sorted(lst)
+    return (sum(s[n//2-1:n//2+1])/2.0, s[n//2])[n % 2] if n else None
+
 def main(args):
     
     i = 0
@@ -224,10 +240,12 @@ def main(args):
     epsilon = 0.1
     numBooks = 0
     numReps = 1
+    numClasses = -1
     stringLength = 5
     bookFileNames = []
     logOfProbabilities = False
     fullComparison = False  #when false use LSH, when true, find the KL-divergence between all pairs
+    useMedian = False
     transitiveClustering = True
     while(i < len(args) and not argError):
         if(args[i] == '-b'):
@@ -280,6 +298,15 @@ def main(args):
             logOfProbabilities = True
         elif(args[i] == '--nontransitive'):
             transitiveClustering = False #if a=b and b=c, then is a=c is not necessarily true
+        elif(args[i] == '--usemedian'):
+            useMedian = True
+        elif(args[i] == '--classes'):
+            if(i + 1 < len(args)):
+                i += 1
+                numReps = 999
+                numClasses = int(args[i])
+            else:
+                argError = True
         else:
             print("Encountered unknown argument: " + args[i])
             argError = True
@@ -291,23 +318,28 @@ def main(args):
     if(verbose):
         print("Books: " + str(bookFileNames))
 
-    booknum_to_word_to_prob, booknum_to_metadata, word_set = getDistributions(bookFileNames, epsilon)
-    if(logOfProbabilities):
-        for booknum in range(numBooks):
-            for word in word_set:
-                booknum_to_word_to_prob[booknum][word] = math.log(booknum_to_word_to_prob[booknum][word])
+
+    booknum_to_word_to_prob, booknum_to_metadata, word_set = getDistributions(bookFileNames, epsilon, logOfProbabilities)
+    
     bookTitles = [None] * numBooks
     for i in range(numBooks):
         bookTitles[i] = booknum_to_metadata[i]['title']
+
+    if(useMedian):
+        booknum_to_word_to_prob = shiftOriginToMedian(booknum_to_word_to_prob, word_set, numBooks)
 #     if(verbose):
 #         for i in range(numBooks):
 #             print(bookTitles[i] + ": " + str(booknum_to_word_to_prob[i]))
+#     if(logOfProbabilities):
+#         for booknum in range(numBooks):
+#             for word in word_set:
+#                 booknum_to_word_to_prob[booknum][word] = math.log(booknum_to_word_to_prob[booknum][word])
 
 
     if(fullComparison):
         runFullComparison(booknum_to_word_to_prob, word_set, bookTitles)
     else:
-        runLSHComparison(booknum_to_word_to_prob, word_set, numReps, stringLength, verbose, bookTitles, transitiveClustering)
+        runLSHComparison(booknum_to_word_to_prob, word_set, numReps, stringLength, verbose, bookTitles, transitiveClustering, numClasses)
 
     
     return
