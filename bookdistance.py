@@ -4,7 +4,6 @@ from string import ascii_lowercase
 import math
 import random
 import ast
-from pkg_resources._vendor.pyparsing import empty
 
 
 
@@ -120,12 +119,14 @@ def runFullComparison(booknum_to_word_to_prob, word_set, bookTitles):
 #     print("sending to csv printer: " + str(distances))
     printAsCSV(bookTitles, bookTitles, distances)
 
-def runLSHComparison(booknum_to_word_to_prob, word_set, numReps, stringLength, verbose, bookTitles):
+def runLSHComparison(booknum_to_word_to_prob, word_set, numReps, stringLength, verbose, bookTitles, transitiveClustering):
     numBooks = len(booknum_to_word_to_prob)
     booknum_to_similarBooks = [set() for x in range(numBooks)]
 
+    equivalencyClasses = defaultdict(int)
     for rep in range(numReps):
         booknum_strings = [""] * numBooks
+
         for stringIndex in range(stringLength):
             randomVector = randomGaussian(word_set)
             for booknum in range(numBooks):
@@ -151,16 +152,54 @@ def runLSHComparison(booknum_to_word_to_prob, word_set, numReps, stringLength, v
                         if booknum < newBook:
                             print("{} is similar to {}".format(bookTitles[booknum],bookTitles[newBook]))
                 booknum_to_similarBooks[booknum].update(bookset)
-#         print("similarbooks: " + str(booknum_to_similarBooks))
-#     print(booknum_to_similarBooks)
+    if transitiveClustering:
+        #convert like books into equivalency classes
+        equivalencyClasses = mergeSetsWithCommonElements(booknum_to_similarBooks)
+                
+            
+                
     print("Final results:")
-    for booknum in range(numBooks):
-        likeBooks = set()
-#         print(booknum_to_similarBooks[booknum])
-#         print(booknum_to_similarBooks[booknum].difference({booknum}))
-        for likeBookNum in booknum_to_similarBooks[booknum].difference({booknum}):
-            likeBooks.add(bookTitles[likeBookNum])
-        print("{} is like {}".format(bookTitles[booknum],",".join(likeBooks)))
+    if(transitiveClustering):
+        equivalencyClassesWithNames = []
+        equivalencyClassNum = 1
+        for equivalencyClass in equivalencyClasses:
+            currentClassNames = []
+            for booknum in equivalencyClass:
+                currentClassNames.append(bookTitles[booknum])
+#             equivalencyClassesWithNames.append(currentClassNames)
+            print("Equivalency Class {}: {}".format(equivalencyClassNum, str(currentClassNames)))
+#     else:
+        for booknum in range(numBooks):
+            likeBooks = set()
+    #         print(booknum_to_similarBooks[booknum])
+    #         print(booknum_to_similarBooks[booknum].difference({booknum}))
+            for likeBookNum in booknum_to_similarBooks[booknum].difference({booknum}):
+                likeBooks.add(bookTitles[likeBookNum])
+            print("{} is like {}".format(bookTitles[booknum],",".join(likeBooks)))
+            
+def mergeSetsWithCommonElements(listOfSets):
+    changeMade = True
+    while changeMade:
+        changeMade = False
+        setsToAdd = []
+        setIndicesToRemove = []
+        for i in range(len(listOfSets)):
+            for j in range(i+1,len(listOfSets)):
+                if(not changeMade and bool(set.intersection(listOfSets[i], listOfSets[j]))):
+                    #the intersection is nonempty
+                    setsToAdd.append(set.union(listOfSets[i], listOfSets[j]))
+                    setIndicesToRemove += [i]
+                    setIndicesToRemove += [j]
+                    changeMade = True
+                    print("marked {} and {} as indices to be removed".format(i,j))
+        setIndicesToRemove = sorted(list(set(setIndicesToRemove)))
+        for i in reversed(range(len(setIndicesToRemove))):
+            listOfSets.pop(setIndicesToRemove[i])
+        for setToAdd in setsToAdd:
+            listOfSets += [setToAdd]
+    return listOfSets
+        
+        
     
 def printAsCSV(colTitles, rowTitles, array):
 #     print("printing csv: " + str(array))
@@ -174,7 +213,7 @@ def printAsCSV(colTitles, rowTitles, array):
     print(",\""+ "\",\"".join(colTitles) + "\"")
     for i in range(len(rowTitles)):
         print( "\"" + rowTitles[i] + "\"," + ",".join(stringArray[i]))
-        
+
 def main(args):
     
     i = 0
@@ -187,6 +226,7 @@ def main(args):
     bookFileNames = []
     logOfProbabilities = False
     fullComparison = False  #when false use LSH, when true, find the KL-divergence between all pairs
+    transitiveClustering = True
     while(i < len(args) and not argError):
         if(args[i] == '-b'):
             if(i + 1 < len(args)):
@@ -236,6 +276,8 @@ def main(args):
             fullComparison = True
         elif(args[i] == '--logs'):
             logOfProbabilities = True
+        elif(args[i] == '--nontransitive'):
+            transitiveClustering = False #if a=b and b=c, then is a=c is not necessarily true
         else:
             print("Encountered unknown argument: " + args[i])
             argError = True
@@ -263,7 +305,7 @@ def main(args):
     if(fullComparison):
         runFullComparison(booknum_to_word_to_prob, word_set, bookTitles)
     else:
-        runLSHComparison(booknum_to_word_to_prob, word_set, numReps, stringLength, verbose, bookTitles)
+        runLSHComparison(booknum_to_word_to_prob, word_set, numReps, stringLength, verbose, bookTitles, transitiveClustering)
 
     
     return
